@@ -10,77 +10,163 @@ const ProjectTasks = () => {
     const { projectId } = useParams();
     const location = useLocation();
     const projectName = location.state?.projectName || 'Project Board';
+    
     const [tasks, setTasks] = useState([]);
+    const [newTaskTitle, setNewTaskTitle] = useState('');
     const [loading, setLoading] = useState(true);
+    const [actionLoading, setActionLoading] = useState(false);
 
-    useEffect(() => { fetchTasks(); }, [projectId]);
+    useEffect(() => {
+        fetchTasks();
+    }, [projectId]);
 
     const fetchTasks = async () => {
         try {
+            setLoading(true);
             const data = await getTasksByProjectAPI(projectId);
             setTasks(data);
-        } catch (err) { console.error(err); } 
-        finally { setLoading(false); }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const onDragStart = (e, taskId) => { e.dataTransfer.setData('taskId', taskId); };
-    const onDragOver = (e) => { e.preventDefault(); };
+    const handleCreateTask = async (e) => {
+        e.preventDefault();
+        if (!newTaskTitle.trim()) return;
+        try {
+            setActionLoading(true);
+            const newTask = await createTaskAPI({ title: newTaskTitle, projectId });
+            setTasks([...tasks, newTask]);
+            setNewTaskTitle('');
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleDeleteTask = async (taskId) => {
+        if (!window.confirm('Delete this task?')) return;
+        try {
+            await deleteTaskAPI(taskId);
+            setTasks(tasks.filter(t => t._id !== taskId));
+        } catch (err) {
+            alert(err.message);
+        }
+    };
+
+    const onDragStart = (e, taskId) => {
+        e.dataTransfer.setData('taskId', taskId);
+    };
+
+    const onDragOver = (e) => {
+        e.preventDefault();
+    };
+
     const onDrop = async (e, newStatus) => {
         const taskId = e.dataTransfer.getData('taskId');
-        handleUpdateStatus(taskId, newStatus);
+        if (!taskId) return;
+        
+        handleStatusChange(taskId, newStatus);
     };
 
-    const handleUpdateStatus = async (taskId, newStatus) => {
-        setTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
-        try { await updateTaskStatusAPI(taskId, newStatus); } 
-        catch (err) { fetchTasks(); }
+    const handleStatusChange = async (taskId, newStatus) => {
+        const taskToMove = tasks.find(t => t._id === taskId);
+        if (taskToMove && taskToMove.status !== newStatus) {
+            setTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
+            try {
+                await updateTaskStatusAPI(taskId, newStatus);
+            } catch (err) {
+                fetchTasks();
+            }
+        }
     };
+
+    const getTasksByStatus = (status) => tasks.filter(t => t.status === status);
 
     const TaskCard = ({ task }) => (
         <div 
-            draggable onDragStart={(e) => onDragStart(e, task._id)}
-            className="bg-white p-3 rounded-lg shadow-sm border mb-3 group"
+            draggable
+            onDragStart={(e) => onDragStart(e, task._id)}
+            className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-start group mb-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4 border-l-blue-500"
         >
-            <div className="flex justify-between items-start">
-                <div className="flex items-center">
-                    <GripVertical size={14} className="text-gray-300 mr-2 hidden md:block" />
-                    <span className="text-sm font-medium">{task.title}</span>
-                </div>
-                <button onClick={() => deleteTaskAPI(task._id).then(fetchTasks)} className="text-red-400 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
+            <div className="flex items-start flex-1">
+                <GripVertical size={16} className="text-gray-300 mr-2 mt-1 hidden md:block" />
+                <p className="text-sm font-semibold text-gray-700">{task.title}</p>
             </div>
-            <select 
-                className="mt-2 text-xs border rounded md:hidden w-full p-1"
-                value={task.status}
-                onChange={(e) => handleUpdateStatus(task._id, e.target.value)}
+            <button 
+                onClick={() => handleDeleteTask(task._id)}
+                className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1"
             >
-                <option value="Todo">Todo</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Done">Done</option>
-            </select>
+                <Trash2 size={16} />
+            </button>
         </div>
     );
 
-    const Column = ({ title, status, color }) => (
-        <div onDragOver={onDragOver} onDrop={(e) => onDrop(e, status)} className={`p-4 rounded-xl bg-gray-50 border-t-4 ${color} min-h-[400px]`}>
-            <h3 className="font-bold mb-4 text-gray-600">{title}</h3>
-            {tasks.filter(t => t.status === status).map(task => <TaskCard key={task._id} task={task} />)}
+    const Column = ({ title, status, bgColor, borderColor, accentColor }) => (
+        <div 
+            onDragOver={onDragOver}
+            onDrop={(e) => onDrop(e, status)}
+            className={`p-4 rounded-xl border ${bgColor} ${borderColor} min-h-[500px] flex flex-col`}
+        >
+            <div className="flex justify-between items-center mb-5 pb-2 border-b">
+                <h3 className={`font-bold uppercase tracking-wider text-xs ${accentColor}`}>{title}</h3>
+                <span className="bg-white px-2 py-0.5 rounded-full text-xs font-bold text-gray-400 border">
+                    {getTasksByStatus(status).length}
+                </span>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+                {getTasksByStatus(status).map(task => <TaskCard key={task._id} task={task} />)}
+            </div>
         </div>
     );
 
     return (
-        <div className="max-w-6xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">{projectName}</h2>
-                <Link to="/dashboard" className="text-blue-600 flex items-center"><ArrowLeft size={16}/> Back</Link>
+        <div className="animate-fade-in max-w-7xl mx-auto px-4">
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <div>
+                    <Link to="/dashboard" className="text-sm font-medium text-blue-600 hover:underline flex items-center mb-2">
+                        <ArrowLeft size={14} className="mr-1" /> Dashboard
+                    </Link>
+                    <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">{projectName}</h2>
+                </div>
+                
+                <form onSubmit={handleCreateTask} className="flex gap-2 w-full md:w-auto bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+                    <input 
+                        placeholder="Add a new task..." 
+                        required 
+                        className="flex-1 md:w-64 px-3 py-2 text-sm outline-none"
+                        value={newTaskTitle} 
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                    />
+                    <Button type="submit" isLoading={actionLoading} className="!py-2 !px-4">
+                        <Plus size={18} />
+                    </Button>
+                </form>
             </div>
+
+            {/* Kanban Board */}
             {loading ? <Loader /> : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <Column title="TO DO" status="Todo" color="border-gray-400" />
-                    <Column title="IN PROGRESS" status="In Progress" color="border-blue-400" />
-                    <Column title="DONE" status="Done" color="border-green-400" />
+                    <Column 
+                        title="To Do" status="Todo" 
+                        bgColor="bg-gray-50/50" borderColor="border-gray-200" accentColor="text-gray-500" 
+                    />
+                    <Column 
+                        title="In Progress" status="In Progress" 
+                        bgColor="bg-blue-50/30" borderColor="border-blue-100" accentColor="text-blue-600" 
+                    />
+                    <Column 
+                        title="Done" status="Done" 
+                        bgColor="bg-green-50/30" borderColor="border-green-100" accentColor="text-green-600" 
+                    />
                 </div>
             )}
         </div>
     );
 };
+
 export default ProjectTasks;
