@@ -15,18 +15,31 @@ const Register = () => {
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError('');
-        setIsLoading(true); 
-        
-        try {
-            await register({ name, email, password });
-            navigate('/dashboard'); 
-        } catch (err) {
-            setError(err.message);
-            setIsLoading(false); 
-        }
-    };
+    e.preventDefault();
+    setError('');
+    if (!name || !email || !password) {
+        setError("All fields are required");
+        return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        setError("Please enter a valid email address");
+        return;
+    }
+    if (password.length < 6) {
+        setError("Password must be at least 6 characters long");
+        return;
+    }
+
+    setIsLoading(true);
+    try {
+        await register({ name, email, password });
+        navigate('/dashboard');
+    } catch (err) {
+        setError(err.message);
+        setIsLoading(false);
+    }
+};
 
     return (
         <div className="flex items-center justify-center min-h-[80vh]">
